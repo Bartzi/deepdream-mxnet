@@ -77,7 +77,7 @@ def array_to_image(array):
     return image
 
 
-rework_symbol_file('caffenet', 'conv5', 4)
+rework_symbol_file('caffenet', 'conv5', 2)
 symbol, arg_params, aux_params = mx.model.load_checkpoint('caffenet', 0000)
 
 print_summary(symbol, shape={'data': (1, 3, 224, 224)})
@@ -89,14 +89,14 @@ mod.set_params(arg_params=arg_params, aux_params=aux_params, allow_missing=True,
 data = mx.nd.random.uniform(shape=(1, 3, 224, 224), ctx=mx.gpu(0))
 
 image = array_to_image(data.asnumpy()[0])
-for i in tqdm.tqdm(range(5000)):
+for i in tqdm.tqdm(range(40)):
     mod.forward(Batch([data]))
     mod.backward()
 
-    input_gradients = mod.get_input_grads()[0]
-    # input_gradients /= input_gradients.mean()
+    input_gradients = mod.get_input_grads()[0].asnumpy()
+    input_gradients /= input_gradients.std() + 1e-8
 
-    data += input_gradients
+    data += mx.nd.array(input_gradients, ctx=mx.gpu(0))
     image = array_to_image(data.asnumpy()[0])
 
 image.show()
