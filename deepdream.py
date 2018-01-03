@@ -8,10 +8,9 @@ from collections import OrderedDict
 import os
 
 import sys
-from mxnet.visualization import print_summary
 from tqdm import tqdm
 
-from visualization import LaplaceFeatureVisualization, TiledFeatureVisualization
+from visualization import LaplaceFeatureVisualization
 
 
 def get_all_layernames(nodes):
@@ -23,7 +22,10 @@ def get_all_layernames(nodes):
 
 
 def rework_symbol_file(prefix, layername):
-    with open("orig-{}-symbol.json".format(prefix)) as json_file:
+    working_dir = os.path.dirname(prefix)
+    prefix = os.path.basename(prefix)
+
+    with open(os.path.join(working_dir, "orig-{}-symbol.json".format(prefix))) as json_file:
         symbol_json = json.load(json_file)
     layers = get_all_layernames(symbol_json['nodes'])
 
@@ -33,9 +35,12 @@ def rework_symbol_file(prefix, layername):
     symbol_json['arg_nodes'] = list(filter(lambda x: x <= head_id, symbol_json['arg_nodes']))
     symbol_json['heads'] = [[len(symbol_json['nodes']) - 1, 0]]
 
-    num_filters = int(symbol_json['nodes'][head_id]['param']['num_filter'])
+    try:
+        num_filters = int(symbol_json['nodes'][head_id]['param']['num_filter'])
+    except KeyError:
+        num_filters = int(symbol_json['nodes'][head_id]['attr']['num_filter'])
 
-    with open('{}-symbol.json'.format(prefix), 'w') as json_file:
+    with open(os.path.join(working_dir, '{}-symbol.json'.format(prefix)), 'w') as json_file:
         json.dump(symbol_json, json_file, indent=4)
 
     return num_filters
@@ -52,16 +57,18 @@ def add_vis_layers(symbol, channel):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='tool that does deep dream like vis of feature maps')
     parser.add_argument('model_prefix', help='model prefix')
+    parser.add_argument('epoch', help='epoch to load', type=int)
     parser.add_argument('layer_name', help='name of layer to visualize')
     parser.add_argument('layer_id', type=int, help='number of channel to visualize')
     parser.add_argument('-g', '--gpu', type=int, default=-1, help='gpu to use [default: cpu]')
     parser.add_argument('--all', action='store_true', default=False, help='visualize all channels of given layer')
     parser.add_argument('--folder', help='folder where images shall be saved, if no folder is given it will be shown to the user')
+    parser.add_argument('-c', '--config', default='config.json', help='path to config file (json format) [default: config.json]')
 
     args = parser.parse_args()
 
     if args.all and not args.folder:
-        print("Please do not use the switch all without the switch folder!")
+        print("Please do not use the switch `all` without the switch `folder`!")
         sys.exit(1)
 
     # adjust symbol file and get number of filters in chosen layer
@@ -72,25 +79,38 @@ if __name__ == "__main__":
     else:
         filters_to_visualize = [args.layer_id]
 
+    with open(args.config) as config_file:
+        config = json.load(config_file)
+
     context = mx.cpu() if args.gpu < 0 else mx.gpu(args.gpu)
 
     # build model
-    symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, 0000)
-    print_summary(symbol, shape={'data': (1, 3, 224, 224)})
+    data_shape = config['input_shape']
+    symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, args.epoch)
 
     # prepare input data
-    data = mx.nd.random.uniform(shape=(1, 3, 224, 224), ctx=context)
+    data = mx.nd.random.uniform(shape=data_shape, ctx=context)
 
     # do the visualization
     for filter_id in tqdm(filters_to_visualize):
         vis_symbol = add_vis_layers(symbol, filter_id)
 
-        mod = mx.mod.Module(vis_symbol, context=mx.gpu(0))
-        mod.bind(data_shapes=[('data', (1, 3, 224, 224))], inputs_need_grad=True)
+        mod = mx.mod.Module(vis_symbol, context=context)
+        mod.bind(data_shapes=[('data', data_shape)], inputs_need_grad=True)
         mod.set_params(arg_params=arg_params, aux_params=aux_params, allow_missing=True, allow_extra=True)
 
         # preform visualization
-        laplace_visualizer = LaplaceFeatureVisualization(mod, context)
+        laplace_visualizer = LaplaceFeatureVisualization(
+            mod,
+            context,
+            scale_n=config['scale_n'],
+            num_steps=config['num_steps'],
+            num_octaves=config['num_octaves'],
+            octave_scale=config['octave_scale'],
+            max_tile_size=config['max_tile_size'],
+            data_shape=data_shape,
+        )
+
         image = laplace_visualizer.visualize(data.copy())
         if args.folder:
             os.makedirs(args.folder, exist_ok=True)

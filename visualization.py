@@ -21,6 +21,8 @@ def normalize_array(array):
 def array_to_image(array):
     normalized_array = normalize_array(array) * 255
     normalized_array = normalized_array.astype('uint8').transpose(1, 2, 0)
+    if normalized_array.shape[-1] == 1:
+        normalized_array = np.broadcast_to(normalized_array, normalized_array.shape[:-1] + (3, ))
     image = Image.fromarray(normalized_array)
     return image
 
@@ -47,15 +49,23 @@ class FeatureVisualization:
 
 class TiledFeatureVisualization(FeatureVisualization):
 
-    def calc_grad_tiled(self, data, tile_size=224):
+    def __init__(self, *args, **kwargs):
+        self.max_tile_size = kwargs.pop('max_tile_size', 256)
+        self.num_octaves = kwargs.pop('num_octaves', 3)
+        self.num_steps = kwargs.pop('num_steps', 10)
+        self.octave_scale = kwargs.pop('octave_scale', 1.5)
+        super().__init__(*args, **kwargs)
+
+    def calc_grad_tiled(self, data):
         image_height, image_width = data.shape[-2:]
+        tile_size = min(image_height, self.max_tile_size)
         shift_x, shift_y = np.random.randint(tile_size, size=2)
 
         shifted_image = np.roll(np.roll(data.asnumpy(), shift_x, 3), shift_y, 2)
         grad = mx.nd.zeros_like(data, ctx=self.context)
 
-        for y in range(0, max(image_height - tile_size // 2, tile_size), tile_size):
-            for x in range(0, max(image_width - tile_size // 2, tile_size), tile_size):
+        for y in range(0, max(image_height - tile_size, tile_size), tile_size):
+            for x in range(0, max(image_width - tile_size, tile_size), tile_size):
                 tiled_crop = mx.nd.array(shifted_image[:, :, y:y+tile_size, x:x+tile_size], ctx=self.context)
                 self.module.forward_backward(Batch([tiled_crop]))
                 gradients = self.module.get_input_grads()[0]
@@ -77,15 +87,12 @@ class TiledFeatureVisualization(FeatureVisualization):
 
     def visualize(self, data):
         image = None
-        num_octaves = 3
-        num_steps = 10
-        octave_scale = 1.5
 
-        for octave in tqdm(range(num_octaves)):
+        for octave in tqdm(range(self.num_octaves)):
             if octave > 0:
-                data = self.resize_data(data, octave_scale)
+                data = self.resize_data(data, self.octave_scale)
 
-        for i in range(num_steps):
+        for i in range(self.num_steps):
             g = self.calc_grad_tiled(data)
             g /= g.std() + 1e-8
             data += mx.nd.array(g, ctx=self.context)
@@ -96,10 +103,14 @@ class TiledFeatureVisualization(FeatureVisualization):
 class LaplaceFeatureVisualization(TiledFeatureVisualization):
 
     def __init__(self, *args, **kwargs):
+        data_shape = kwargs.pop('data_shape')
+        self.num_channels = data_shape[1]
+        self.scale_n = kwargs.pop('scale_n', 4)
         super().__init__(*args, **kwargs)
+
         laplace_kernel = np.float32([1, 4, 6, 4, 1])
         laplace_kernel = np.outer(laplace_kernel, laplace_kernel)
-        laplace_kernel_5x5 = laplace_kernel[:, :, None, None] / laplace_kernel.sum() * np.eye(3, dtype=np.float32)
+        laplace_kernel_5x5 = laplace_kernel[:, :, None, None] / laplace_kernel.sum() * np.eye(self.num_channels, dtype=np.float32)
         self.laplace_kernel_5x5 = mx.nd.array(laplace_kernel_5x5.transpose(2, 3, 0, 1), ctx=self.context)
 
     def laplace_split(self, data):
@@ -109,7 +120,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
             kernel=(5, 5),
             stride=(2, 2),
             no_bias=True,
-            num_filter=3
+            num_filter=self.num_channels,
         )
         if data.shape[-2] % 2 == 0:
             low_2 = mx.nd.Deconvolution(
@@ -117,7 +128,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                 self.laplace_kernel_5x5 * 4,
                 kernel=(5, 5),
                 stride=(2, 2),
-                num_filter=3,
+                num_filter=self.num_channels,
                 no_bias=True,
                 adj=(1, 1)
             )
@@ -127,7 +138,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                 self.laplace_kernel_5x5 * 4,
                 kernel=(5, 5),
                 stride=(2, 2),
-                num_filter=3,
+                num_filter=self.num_channels,
                 no_bias=True
             )
         high = data - low_2
@@ -150,7 +161,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                     self.laplace_kernel_5x5 * 4,
                     kernel=(5, 5),
                     stride=(2, 2),
-                    num_filter=3,
+                    num_filter=self.num_channels,
                     no_bias=True,
                     adj=(1, 1)
                 )
@@ -160,7 +171,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                     self.laplace_kernel_5x5 * 4,
                     kernel=(5, 5),
                     stride=(2, 2),
-                    num_filter=3,
+                    num_filter=self.num_channels,
                     no_bias=True
                 )
             data += high
@@ -171,23 +182,20 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
         std = mx.nd.sqrt(mx.nd.mean(mx.nd.square(data)))
         return data / mx.nd.maximum(std, eps)
 
-    def laplacian_normalization(self, data, scale_n=4):
-        tlevels = self.laplace_split_n(data, scale_n)
+    def laplacian_normalization(self, data):
+        tlevels = self.laplace_split_n(data, self.scale_n)
         tlevels = list(map(self.normalize_std, tlevels))
         out = self.laplace_merge(tlevels)
         return out
 
     def visualize(self, data):
         image = None
-        num_octaves = 3
-        num_steps = 20
-        octave_scale = 1.5
 
-        for octave in tqdm(range(num_octaves)):
+        for octave in tqdm(range(self.num_octaves)):
             if octave > 0:
-                data = self.resize_data(data, octave_scale)
+                data = self.resize_data(data, self.octave_scale)
 
-            for i in range(num_steps):
+            for i in range(self.num_steps):
                 g = self.calc_grad_tiled(data)
                 g = self.laplacian_normalization(mx.nd.array(g, ctx=self.context))
                 data += g
