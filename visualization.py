@@ -29,9 +29,10 @@ def array_to_image(array):
 
 class FeatureVisualization:
 
-    def __init__(self, module, context):
+    def __init__(self, module, context, step_size=1):
         self.module = module
         self.context = context
+        self.step_size = step_size
 
     def visualize(self, data):
         image = None
@@ -42,7 +43,7 @@ class FeatureVisualization:
             input_gradients = self.module.get_input_grads()[0].asnumpy()
             input_gradients /= input_gradients.std() + 1e-8
 
-            data += mx.nd.array(input_gradients, ctx=self.context)
+            data += self.step_size * mx.nd.array(input_gradients, ctx=self.context)
             image = array_to_image(data.asnumpy()[0])
         return image
 
@@ -67,7 +68,8 @@ class TiledFeatureVisualization(FeatureVisualization):
         for y in range(0, max(image_height - tile_size, tile_size), tile_size):
             for x in range(0, max(image_width - tile_size, tile_size), tile_size):
                 tiled_crop = mx.nd.array(shifted_image[:, :, y:y+tile_size, x:x+tile_size], ctx=self.context)
-                self.module.forward_backward(Batch([tiled_crop]))
+                self.module.forward(Batch([tiled_crop]))
+                self.module.backward()
                 gradients = self.module.get_input_grads()[0]
                 grad[:, :, y:y+tile_size, x:x+tile_size] = gradients
         return np.roll(np.roll(grad.asnumpy(), -shift_x, 3), -shift_y, 2)
@@ -95,7 +97,7 @@ class TiledFeatureVisualization(FeatureVisualization):
         for i in range(self.num_steps):
             g = self.calc_grad_tiled(data)
             g /= g.std() + 1e-8
-            data += mx.nd.array(g, ctx=self.context)
+            data += self.step_size * mx.nd.array(g, ctx=self.context)
             image = array_to_image(data.asnumpy()[0])
         return image
 
@@ -198,6 +200,6 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
             for i in range(self.num_steps):
                 g = self.calc_grad_tiled(data)
                 g = self.laplacian_normalization(mx.nd.array(g, ctx=self.context))
-                data += g
+                data += self.step_size * g
                 image = array_to_image(data.asnumpy()[0])
         return image

@@ -4,6 +4,7 @@
   "num_steps": 25,
   "num_octaves": 6,
   "octave_scale": 1.5,
+  "step_size": 1,
   "max_tile_size": 256
 
 }

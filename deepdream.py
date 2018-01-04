@@ -108,6 +108,7 @@ if __name__ == "__main__":
             num_octaves=config['num_octaves'],
             octave_scale=config['octave_scale'],
             max_tile_size=config['max_tile_size'],
+            step_size=config['step_size'],
             data_shape=data_shape,
         )
 
