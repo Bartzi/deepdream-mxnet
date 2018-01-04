@@ -8,6 +8,8 @@ from collections import OrderedDict
 import os
 
 import sys
+
+import numpy as np
 from tqdm import tqdm
 
 from visualization import LaplaceFeatureVisualization
@@ -89,7 +91,14 @@ if __name__ == "__main__":
     symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, args.epoch)
 
     # prepare input data
-    data = mx.nd.random.uniform(shape=data_shape, ctx=context)
+    data = np.random.uniform(size=data_shape)
+    mean = config.get('mean', None)
+    if mean is not None:
+        assert data_shape[1] == len(mean), "the mean to subtract does not have the correct amount of values"
+        data *= 255
+        for i, mean_value in enumerate(mean):
+            data[:, i, ...] -= mean_value
+    data = mx.nd.array(data, ctx=context)
 
     # do the visualization
     for filter_id in tqdm(filters_to_visualize):
