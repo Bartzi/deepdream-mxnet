@@ -75,10 +75,11 @@ class TiledFeatureVisualization(FeatureVisualization):
         return np.roll(np.roll(grad.asnumpy(), -shift_x, 3), -shift_y, 2)
 
     def resize_data(self, data, scale):
+        batch_size, _, height, width = data.shape
         zoom_matrix = mx.nd.array([[1, 0, 0], [0, 1, 0]], ctx=self.context)
         zoom_matrix = mx.nd.reshape(zoom_matrix, shape=(1, 6))
+        zoom_matrix = mx.nd.broadcast_axis(zoom_matrix, 0, batch_size)
 
-        _, _, height, width = data.shape
         new_height = int(height * scale)
         new_width = int(width * scale)
 
@@ -191,7 +192,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
         return out
 
     def visualize(self, data):
-        image = None
+        images = None
 
         for octave in tqdm(range(self.num_octaves)):
             if octave > 0:
@@ -201,5 +202,9 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                 g = self.calc_grad_tiled(data)
                 g = self.laplacian_normalization(mx.nd.array(g, ctx=self.context))
                 data += self.step_size * g
-                image = array_to_image(data.asnumpy()[0])
-        return image
+                array_to_image(data.asnumpy()[0])
+        individual_images = mx.nd.split(data, len(data), 0, squeeze_axis=True)
+        if not hasattr(individual_images, '__iter__'):
+            individual_images = [individual_images]
+        images = [array_to_image(i.asnumpy()) for i in individual_images]
+        return images

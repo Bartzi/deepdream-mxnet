@@ -40,7 +40,10 @@ def rework_symbol_file(prefix, layername):
     try:
         num_filters = int(symbol_json['nodes'][head_id]['param']['num_filter'])
     except KeyError:
-        num_filters = int(symbol_json['nodes'][head_id]['attr']['num_filter'])
+        try:
+            num_filters = int(symbol_json['nodes'][head_id]['attr']['num_filter'])
+        except KeyError:
+            num_filters = int(symbol_json['nodes'][head_id]['attr']['num_hidden'])
 
     with open(os.path.join(working_dir, '{}-symbol.json'.format(prefix)), 'w') as json_file:
         json.dump(symbol_json, json_file, indent=4)
@@ -88,6 +91,8 @@ if __name__ == "__main__":
 
     # build model
     data_shape = config['input_shape']
+    batch_size = config.get('batch_size', 1)
+    data_shape = [batch_size] + data_shape
     symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, args.epoch)
 
     # prepare input data
@@ -121,9 +126,10 @@ if __name__ == "__main__":
             data_shape=data_shape,
         )
 
-        image = laplace_visualizer.visualize(data.copy())
+        images = laplace_visualizer.visualize(data.copy())
         if args.folder:
             os.makedirs(args.folder, exist_ok=True)
-            image.save(os.path.join(args.folder, "{}.png".format(filter_id)))
+            for i, image in enumerate(images):
+                image.save(os.path.join(args.folder, "{}_{}.png".format(filter_id, i)))
         else:
-            image.show()
+            images[0].show()
