@@ -96,7 +96,8 @@ if __name__ == "__main__":
     symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, args.epoch)
 
     # prepare input data
-    data = np.random.uniform(size=data_shape)
+    fixed_generator = np.random.RandomState(42)
+    data = fixed_generator.uniform(size=data_shape)
     mean = config.get('mean', None)
     if mean is not None:
         assert data_shape[1] == len(mean), "the mean to subtract does not have the correct amount of values"
