@@ -59,7 +59,7 @@ class TiledFeatureVisualization(FeatureVisualization):
 
     def calc_grad_tiled(self, data):
         image_height, image_width = data.shape[-2:]
-        tile_size = min(image_height, self.max_tile_size)
+        tile_size = self.max_tile_size
         shift_x, shift_y = np.random.randint(tile_size, size=2)
 
         shifted_image = np.roll(np.roll(data.asnumpy(), shift_x, 3), shift_y, 2)
@@ -67,11 +67,13 @@ class TiledFeatureVisualization(FeatureVisualization):
 
         for y in range(0, max(image_height - tile_size, tile_size), tile_size):
             for x in range(0, max(image_width - tile_size, tile_size), tile_size):
-                tiled_crop = mx.nd.array(shifted_image[:, :, y:y+tile_size, x:x+tile_size], ctx=self.context)
+                y_end = min(y + tile_size, image_height)
+                x_end = min(x + tile_size, image_width)
+                tiled_crop = mx.nd.array(shifted_image[:, :, y:y_end, x:x_end], ctx=self.context)
                 self.module.forward(Batch([tiled_crop]))
                 self.module.backward()
                 gradients = self.module.get_input_grads()[0]
-                grad[:, :, y:y+tile_size, x:x+tile_size] = gradients
+                grad[:, :, y:y_end, x:x_end] = gradients
         return np.roll(np.roll(grad.asnumpy(), -shift_x, 3), -shift_y, 2)
 
     def resize_data(self, data, scale):
