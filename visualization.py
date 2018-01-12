@@ -193,8 +193,11 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
         out = self.laplace_merge(tlevels)
         return out
 
-    def visualize(self, data):
+    def visualize(self, data, return_intermediate_images=False):
         images = None
+
+        if return_intermediate_images:
+            individual_images = []
 
         for octave in tqdm(range(self.num_octaves)):
             if octave > 0:
@@ -205,7 +208,11 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                 g = self.laplacian_normalization(mx.nd.array(g, ctx=self.context))
                 data += self.step_size * g
                 array_to_image(data.asnumpy()[0])
-        individual_images = mx.nd.split(data, len(data), 0, squeeze_axis=True)
+                if return_intermediate_images:
+                    individual_images.append(mx.nd.split(data, len(data), 0, squeeze_axis=True))
+
+        if not return_intermediate_images:
+            individual_images = mx.nd.split(data, len(data), 0, squeeze_axis=True)
         if not hasattr(individual_images, '__iter__'):
             individual_images = [individual_images]
         images = [array_to_image(i.asnumpy()) for i in individual_images]
