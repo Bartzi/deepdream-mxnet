@@ -125,25 +125,15 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
             no_bias=True,
             num_filter=self.num_channels,
         )
-        if data.shape[-2] % 2 == 0:
-            low_2 = mx.nd.Deconvolution(
-                low,
-                self.laplace_kernel_5x5 * 4,
-                kernel=(5, 5),
-                stride=(2, 2),
-                num_filter=self.num_channels,
-                no_bias=True,
-                adj=(1, 1)
-            )
-        else:
-            low_2 = mx.nd.Deconvolution(
-                low,
-                self.laplace_kernel_5x5 * 4,
-                kernel=(5, 5),
-                stride=(2, 2),
-                num_filter=self.num_channels,
-                no_bias=True
-            )
+        low_2 = mx.nd.Deconvolution(
+            low,
+            self.laplace_kernel_5x5 * 4,
+            kernel=(5, 5),
+            stride=(2, 2),
+            num_filter=self.num_channels,
+            no_bias=True,
+            adj=(1-data.shape[-2] % 2, 1-data.shape[-1] % 2)
+        )
         high = data - low_2
         return low, high
 
@@ -158,25 +148,15 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
     def laplace_merge(self, levels):
         data = levels[0]
         for high in levels[1:]:
-            if high.shape[-2] % 2 == 0:
-                data = mx.nd.Deconvolution(
-                    data,
-                    self.laplace_kernel_5x5 * 4,
-                    kernel=(5, 5),
-                    stride=(2, 2),
-                    num_filter=self.num_channels,
-                    no_bias=True,
-                    adj=(1, 1)
-                )
-            else:
-                data = mx.nd.Deconvolution(
-                    data,
-                    self.laplace_kernel_5x5 * 4,
-                    kernel=(5, 5),
-                    stride=(2, 2),
-                    num_filter=self.num_channels,
-                    no_bias=True
-                )
+            data = mx.nd.Deconvolution(
+                data,
+                self.laplace_kernel_5x5 * 4,
+                kernel=(5, 5),
+                stride=(2, 2),
+                num_filter=self.num_channels,
+                no_bias=True,
+                adj=(1-data.shape[-2] % 2, 1-data.shape[-1] % 2)
+            )
             data += high
 
         return data
