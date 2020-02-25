@@ -155,7 +155,7 @@ class LaplaceFeatureVisualization(TiledFeatureVisualization):
                 stride=(2, 2),
                 num_filter=self.num_channels,
                 no_bias=True,
-                adj=(1-data.shape[-2] % 2, 1-data.shape[-1] % 2)
+                adj=(1-high.shape[-2] % 2, 1-high.shape[-1] % 2)
             )
             data += high
 
