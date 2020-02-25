@@ -41,9 +41,9 @@ def rework_symbol_file(prefix, layername):
         num_filters = int(symbol_json['nodes'][head_id]['param']['num_filter'])
     except KeyError:
         try:
-            num_filters = int(symbol_json['nodes'][head_id]['attr']['num_filter'])
+            num_filters = int(symbol_json['nodes'][head_id]['attrs']['num_filter'])
         except KeyError:
-            num_filters = int(symbol_json['nodes'][head_id]['attr']['num_hidden'])
+            num_filters = int(symbol_json['nodes'][head_id]['attrs']['num_hidden'])
 
     with open(os.path.join(working_dir, '{}-symbol.json'.format(prefix)), 'w') as json_file:
         json.dump(symbol_json, json_file, indent=4)
